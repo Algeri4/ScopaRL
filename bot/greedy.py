@@ -53,7 +53,7 @@ class BotGreedy(BotAgent):
                     punteggio += 100
                 elif c.valore == 7:
                     punteggio += 50
-                elif c.seme == "Denari":
+                elif c.seme == "denari":
                     punteggio += 20
                 elif c.valore == 10:  # Re
                     punteggio += 5

@@ -95,7 +95,10 @@ class SelfPlayTrainer(PPOTrainer):
         state_dict, _ = self.opponent_pool[idx]
 
         # Crea rete e carica pesi
-        opponent_net = ScopaNetwork(input_dim=209, hidden_dim=512).to(self.device)
+        opponent_net = ScopaNetwork(
+            input_dim=self.network.input_dim,
+            hidden_dim=self.network.hidden_dim
+        ).to(self.device)
         opponent_net.load_state_dict(state_dict)
         opponent_net.eval()
 

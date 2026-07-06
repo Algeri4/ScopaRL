@@ -49,6 +49,7 @@ class ScopaEnvironment:
 
         # Dati dell'ultima smazzata conclusa (per GUI / log)
         self.ultima_smazzata = None
+        self.smazzata_appena_finita = False
 
     # ------------------------------------------------------------------
     # GIOCO
@@ -71,6 +72,7 @@ class ScopaEnvironment:
         self.ultimo_prese = None
         self.storico = []
         self.ultima_smazzata = None
+        self.smazzata_appena_finita = False
 
         self._distribuisci_mano()
         return self._get_observation(0)
@@ -156,9 +158,11 @@ class ScopaEnvironment:
 
         self.giocate_totali += 1
         self.turno = 1 - self.turno
-        self._controlla_fine()
 
-        # reward=0.0 mantenuto solo per compatibilità di firma (vedi docstring)
+        self.smazzata_appena_finita = False
+        self._controlla_fine()
+        info["fine_smazzata"] = self.smazzata_appena_finita
+
         return self._get_observation(giocatore_idx), 0.0, self.partita_finita, info
 
     def _controlla_fine(self):
@@ -174,6 +178,7 @@ class ScopaEnvironment:
             self._fine_smazzata()
 
     def _fine_smazzata(self):
+        self.smazzata_appena_finita = True
         # Carte rimaste al banco -> ultimo giocatore che ha preso
         if self.tavolo.banco and self.ultimo_prese is not None:
             self._giocatore(self.ultimo_prese).prese.extend(self.tavolo.banco)

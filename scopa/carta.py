@@ -10,6 +10,12 @@ class Carta:
     def __str__(self):
         return f"{NOMI_CARTE[self.valore]} di {self.seme}"
 
+    def __eq__(self, other):
+        return isinstance(other, Carta) and self.seme == other.seme and self.valore == other.valore
+
+    def __hash__(self):
+        return hash((self.seme, self.valore))
+
     def valore_primiera(self):
         return PRIMIERA_VALORI[self.valore]
 

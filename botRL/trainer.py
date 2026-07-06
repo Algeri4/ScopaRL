@@ -112,18 +112,21 @@ class PPOTrainer:
         self.best_winrate = 0.0
 
     def collect_rollout(self, env: ScopaEnvironment,
-                         agent_idx: int = 0,
-                         max_steps: int = 1000) -> RolloutBuffer:
+                        agent_idx: int = 0,
+                        max_steps: int = 1000) -> RolloutBuffer:
         """
-        Gioca un episodio e raccoglie la traiettoria.
+        Gioca UNA SINGOLA SMAZZATA (non l'intera partita a 11) e raccoglie
+        la traiettoria. L'episodio finisce quando env segnala
+        info["fine_smazzata"], non quando env.partita_finita.
         """
         buffer = RolloutBuffer(device=self.device)
         env.reset()
 
         step_count = 0
-        last_own_observation = None  # per il reward terminale
+        last_own_observation = None
+        hand_done = False
 
-        while not env.partita_finita and step_count < max_steps:
+        while not hand_done and step_count < max_steps:
             current_idx = env.turno
             obs = env._get_observation(current_idx)
 
@@ -141,18 +144,16 @@ class PPOTrainer:
                 )
                 value = value.view(-1)
 
-                # `_` perché env.step() restituisce sempre reward=0.0
-                # (l'ambiente è neutrale sul reward, vedi scopa/ambiente.py):
-                # il numero vero lo calcola self.reward_engine sotto.
                 next_obs, _, done, info = env.step(action, current_idx)
                 last_own_observation = next_obs
+                hand_done = info.get("fine_smazzata", False) or done
 
                 shaped_reward = self.reward_engine.compute_step_reward(
                     info=info,
                     observation=obs,
                     action=action,
                     next_observation=next_obs,
-                    done=done
+                    done=hand_done
                 )
 
                 buffer.add(
@@ -162,7 +163,7 @@ class PPOTrainer:
                     log_prob=log_prob.detach(),
                     reward=shaped_reward,
                     value=value.detach(),
-                    done=done
+                    done=hand_done
                 )
             else:
                 if self.opponent is not None:
@@ -171,16 +172,20 @@ class PPOTrainer:
                     azione = self.policy.select_action(obs)
 
                 next_obs, _, done, info = env.step(azione, current_idx)
+                hand_done = info.get("fine_smazzata", False) or done
 
             step_count += 1
 
-        # Reward terminale: aggiunto all'ultimo step raccolto per il nostro agente
-        if env.partita_finita and last_own_observation is not None and len(buffer) > 0:
-            final_reward = self.reward_engine.compute_terminal_reward(last_own_observation)
+        if hand_done and len(buffer) > 0:
+            # Prendi l'observation FRESCA per il nostro agente, non quella
+            # (eventualmente stale) dell'ultimo suo turno: lo stato di env è
+            # già completamente aggiornato (punteggi inclusi) subito dopo
+            # l'ultimo step, chiunque l'abbia giocato.
+            final_observation = env._get_observation(agent_idx)
+            final_reward = self.reward_engine.compute_terminal_reward(final_observation)
             buffer.rewards[-1] += final_reward
 
         return buffer
-
     def update_policy(self, buffer: RolloutBuffer):
         """Esegue l'update PPO sui dati raccolti."""
         if len(buffer) == 0:
@@ -188,6 +193,7 @@ class PPOTrainer:
 
         obs, actions, masks, old_log_probs, rewards, values, dones = buffer.get_batch()
         values = values.view(-1)
+        actions = actions.view(-1)
 
         advantages, returns = buffer.compute_advantages(
             rewards, values, dones,
