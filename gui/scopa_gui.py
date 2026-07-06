@@ -10,7 +10,9 @@ from scopa.carta import Carta
 from .costanti_gui import (
     W, H, CX, Y_AVV_MANO, Y_BANCO, Y_GIOC_MANO,
     X_MAZZETTO, Y_MAZZETTO_AVV, Y_MAZZETTO_GIOC,
-    SPAZIO_CARTE, SLOT_MANO, SLOT_BANCO
+    SPAZIO_CARTE, SLOT_MANO, SLOT_BANCO,
+    # ═══ NUOVO ═══
+    X_TABELLA, Y_TABELLA, LARGHEZZA_TABELLA, ALTEZZA_RIGA, ALTEZZA_HEADER
 )
 from .caricatore import CaricatoreCarte
 from .animazioni import GestoreAnimazioni
@@ -224,6 +226,14 @@ class ScopaGUI:
         self.canvas.delete("lampeggio")
         self.canvas.delete("animazione")
         self.canvas.delete("effetto_scopa")
+        # ═══ MODIFICATO: non cancellare "tabella_prob" ═══
+        self.canvas.delete("static")
+        self.canvas.delete("mano_avv")
+        self.canvas.delete("banco")
+        self.canvas.delete("mano")
+        # La tabella_prob viene gestita dal Disegnatore, non cancellarla qui
+        # ma la ridisegniamo dopo
+
         self.disegnatore.clear()
 
         # Mazzetti
@@ -251,6 +261,36 @@ class ScopaGUI:
                 self._carta_uguale, self.animazione_in_corso, self._clicca_mano
             )
 
+        # ═══ NUOVO: Disegna tabella probabilità (vista dal bot) ═══
+        self._disegna_tabella_probabilita()
+
+    # ═══ NUOVO: Disegna tabella probabilità (vista dal bot) ═══
+    def _disegna_tabella_probabilita(self):
+        """Calcola e disegna la tabella probabilità dal punto di vista del bot."""
+        if not self.env or self.attesa_continua:
+            return
+
+        # Il bot è giocatore_1 (indice 1), l'umano è giocatore_0 (indice 0)
+        # Prendiamo l'observation dal punto di vista del bot
+        obs_bot = self.env._get_observation(1)
+
+        # Carte note = tutto ciò che il bot vede
+        note = []
+        note.extend(obs_bot.get("banco", []))
+        note.extend(obs_bot.get("prese_mie", []))
+        note.extend(obs_bot.get("prese_avversario", []))
+        note.extend(obs_bot.get("mano", []))  # mano del bot (le sue carte)
+
+        # Carte in mano all'umano: il bot NON le vede, ma sa quante ne ha
+        obs_umano = self.env._get_observation(0)
+        mano_umano = obs_umano.get("mano", [])
+
+        carte_mazzo = self.env.mazzo.rimanenti()
+
+        self.disegnatore.tabella_probabilita(
+            X_TABELLA, Y_TABELLA, LARGHEZZA_TABELLA, ALTEZZA_RIGA, ALTEZZA_HEADER,
+            note, mano_umano, carte_mazzo
+        )
     # ─────────────────────────────────────────────────────────────────────────
     # ANIMAZIONI MOSSA
     # ─────────────────────────────────────────────────────────────────────────

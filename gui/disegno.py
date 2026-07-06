@@ -6,15 +6,18 @@ from .costanti_gui import (
     Y_AVV_MANO, Y_BANCO, Y_GIOC_MANO, X_MAZZETTO, Y_MAZZETTO_AVV, Y_MAZZETTO_GIOC,
     SPAZIO_CARTE, SLOT_MANO, SLOT_BANCO, CX
 )
+from .probabilita import TabellaProbabilita
 
 
 class Disegnatore:
     def __init__(self, canvas, caricatore):
         self.canvas = canvas
         self.caricatore = caricatore
+        self.tabella_prob = None
 
     def clear(self):
         self.canvas.delete("all")
+        self.tabella_prob = None
 
     def mazzetto(self, x, y, giocatore, scope_cartes):
         n_prese = len(giocatore.prese)
@@ -84,3 +87,10 @@ class Disegnatore:
         self.canvas.create_rectangle(x - 50, y - 75, x + 50, y + 75,
                                      outline="#ffeb3b", width=5, fill="",
                                      tags=("sel", tag))
+
+    def tabella_probabilita(self, x, y, larghezza, altezza_riga, altezza_header,
+                            note, mano_umano, carte_mazzo):
+        self.tabella_prob = TabellaProbabilita(
+            self.canvas, x, y, larghezza, altezza_riga, altezza_header
+        )
+        self.tabella_prob.disegna(note, mano_umano, carte_mazzo)

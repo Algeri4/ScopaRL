@@ -13,8 +13,25 @@ from .observation import ObservationBuilder
 
 
 class ScopaEnvironment:
+    """
+    NOTA IMPORTANTE SUL REWARD:
+    Questo ambiente NON calcola reward per il reinforcement learning.
+    `step()` restituisce solo FATTI OGGETTIVI di gioco (chi ha fatto scopa,
+    quali carte sono state prese, ecc.) dentro `info`. Qualsiasi numero di
+    reward per allenare un bot è responsabilità esclusiva di un
+    `RewardEngine` (vedi botRL/reward_engine.py), che riceve `info` e le
+    observation e decide come trasformarli in un numero.
+
+    Motivo: bot diversi (PPO con reward diverse, DQN, ecc.) vogliono
+    reward diversi dagli STESSI eventi di gioco. Se l'ambiente inventasse
+    già un reward "di default", ogni RewardEngine dovrebbe sapere se
+    tenerlo, ignorarlo o sommarlo — fonte di bug e di doppio calcolo
+    silenzioso. Meglio che l'ambiente resti neutrale al 100%.
+    """
+
     def __init__(self, nome_p0="Bot", nome_p1="Avversario"):
-        self.mazzo = Mazzo()
+        self._rng = random.Random()
+        self.mazzo = Mazzo(rng=self._rng)
         self.tavolo = Tavolo()
         self.motore = MotoreScopa()
 
@@ -38,7 +55,7 @@ class ScopaEnvironment:
     # ------------------------------------------------------------------
     def reset(self, seed: Optional[int] = None):
         if seed is not None:
-            random.seed(seed)
+            self._rng.seed(seed)
 
         self.giocatore_0.reset()
         self.giocatore_1.reset()
@@ -74,6 +91,17 @@ class ScopaEnvironment:
                 break
 
     def step(self, action: Tuple[Carta, Optional[list]], giocatore_idx: int):
+        """
+        Esegue una mossa.
+
+        Ritorna: (observation, info, done)  ... vedi nota sotto sul reward.
+
+        NB: per compatibilità con codice esistente (PartitaCLI, trainer)
+        la firma restituisce comunque 4 valori (obs, reward, done, info),
+        ma `reward` è SEMPRE 0.0: è un placeholder neutro, non un segnale
+        di training. Chi vuole un reward numerico lo calcola con un
+        RewardEngine a partire da `info` + observation.
+        """
         if self.partita_finita:
             raise ValueError("Partita finita")
         if giocatore_idx != self.turno:
@@ -92,8 +120,14 @@ class ScopaEnvironment:
         banco_prima = list(self.tavolo.banco)
         g.gioca_carta(carta)
 
-        reward = 0.0
-        info = {"scopa": False, "balla": False}
+        # `info` contiene SOLO fatti oggettivi di gioco. Nessun numero di
+        # reward viene deciso qui: quello spetta al RewardEngine del bot.
+        info = {
+            "scopa": False,
+            "balla": prese is None,
+            "carta_giocata": carta,
+            "carte_prese": list(prese) if prese else [],
+        }
 
         if prese:
             self.tavolo.rimuovi(prese)
@@ -103,36 +137,29 @@ class ScopaEnvironment:
 
             if is_scopa and not ultima:
                 g.aggiungi_prese(prese_totali, scopa=True)
-                reward += 1.0
                 info["scopa"] = True
             else:
                 g.aggiungi_prese(prese_totali, scopa=False)
 
-            # Reward shaping
-            for c in prese_totali:
-                if c.is_settebello(): reward += 0.5
-                elif c.valore == 7: reward += 0.3
-                elif c.seme == "Denari": reward += 0.1
-
             self.ultimo_prese = giocatore_idx
         else:
             self.tavolo.aggiungi([carta])
-            reward -= 0.05
-            info["balla"] = True
 
-        # Log
+        # Log storico (usato anche da HistoryEncoder tramite observation["storico"])
         self.storico.append({
             "turno": giocatore_idx,
             "carta": carta,
             "prese": prese or [],
-            "scopa": info["scopa"]
+            "scopa": info["scopa"],
+            "banco_prima": list(banco_prima)
         })
 
         self.giocate_totali += 1
         self.turno = 1 - self.turno
         self._controlla_fine()
 
-        return self._get_observation(giocatore_idx), reward, self.partita_finita, info
+        # reward=0.0 mantenuto solo per compatibilità di firma (vedi docstring)
+        return self._get_observation(giocatore_idx), 0.0, self.partita_finita, info
 
     def _controlla_fine(self):
         if self.mano_corrente == 1 and self.giocate_totali >= 18:
@@ -173,14 +200,14 @@ class ScopaEnvironment:
             "ultimo_prese": self.ultimo_prese,
         }
 
-        print(f"\n[SMAZZATA] {self.giocatore_0.nome} +{pt0}, {self.giocatore_1.nome} +{pt1}")
-        print(f"  Totale: {self.punteggi}")
-        print(f"  Primiera: {dettagli['primiera']}")
+       # print(f"\n[SMAZZATA] {self.giocatore_0.nome} +{pt0}, {self.giocatore_1.nome} +{pt1}")
+      #  print(f"  Totale: {self.punteggi}")
+       # print(f"  Primiera: {dettagli['primiera']}")
 
         if max(self.punteggi) >= 11:
             self.partita_finita = True
             v = 0 if self.punteggi[0] > self.punteggi[1] else 1
-            print(f"\n[VITTORIA] {self._giocatore(v).nome} vince!")
+            #print(f"\n[VITTORIA] {self._giocatore(v).nome} vince!")
             return
 
         self._prepara_nuova_smazzata()
@@ -201,7 +228,7 @@ class ScopaEnvironment:
         self.storico = []
 
         self._distribuisci_mano()
-        print(f"\n[NUOVA SMAZZATA] Mazziere: {self._giocatore(self.mazziere).nome}")
+        #print(f"\n[NUOVA SMAZZATA] Mazziere: {self._giocatore(self.mazziere).nome}")
 
     # ------------------------------------------------------------------
     # RL INTERFACE

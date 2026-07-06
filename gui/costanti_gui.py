@@ -37,3 +37,12 @@ Y_MAZZETTO_GIOC = 640
 
 SLOT_MANO = 9
 SLOT_BANCO = 10
+
+# ═══════════════════════════════════════════════════════════════════
+# TABELLA PROBABILITÀ (spostata più a sinistra e più in basso, 6 colonne)
+# ═══════════════════════════════════════════════════════════════════
+X_TABELLA = 880          # ← spostata a sinistra (era 920)
+Y_TABELLA = 240          # ← spostata più in basso (era 200)
+LARGHEZZA_TABELLA = 300  # ← più larga per 6 colonne
+ALTEZZA_RIGA = 26
+ALTEZZA_HEADER = 30

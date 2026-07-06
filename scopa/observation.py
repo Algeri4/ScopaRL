@@ -6,6 +6,9 @@ from .costanti import SEMI
 class ObservationBuilder:
     """
     Costruisce lo stato di gioco per il bot.
+    L'observation contiene SEMPRE tutta l'informazione grezza disponibile:
+    ogni encoder è libero di usarne solo una parte, ma l'env non decide
+    per nessuno cosa è "utile" o no.
     """
 
     @staticmethod
@@ -41,14 +44,22 @@ class ObservationBuilder:
             "sconosciute": list(sconosciute),
             "azioni_legali": env.get_legal_actions(giocatore_idx),
             "partita_finita": env.partita_finita,
+            # NUOVO: storico completo delle mosse di questa smazzata.
+            # Ogni elemento: {"turno": idx, "carta": Carta, "prese": [Carta,...], "scopa": bool}
+            # Esposto qui (invece che tenuto stateful dentro un encoder) così che
+            # qualsiasi ObservationEncoder possa costruirci sopra una feature di
+            # memoria/storia rimanendo una funzione pura di observation -> vettore.
+            "storico": list(env.storico),
         }
 
     @staticmethod
     def to_vector(obs: dict) -> list:
         """
-        Converte l'osservazione in vettore numerico per la rete neurale.
+        Encoding "storico" mantenuto per retrocompatibilità con codice
+        esistente che lo chiama direttamente. Per il training nuovo, usare
+        botRL.observation_encoder.StandardEncoder (fa la stessa cosa, ma
+        è iniettabile e scambiabile con altri encoder).
         """
-
         def one_hot(carte, size=40):
             v = [0.0] * size
             for c in carte:
