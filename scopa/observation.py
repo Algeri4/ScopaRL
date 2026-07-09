@@ -42,6 +42,9 @@ class ObservationBuilder:
             "turno": env.turno,
             "punteggi": list(env.punteggi),
             "sconosciute": list(sconosciute),
+            "carte_mazzo": env.mazzo.rimanenti(),
+            "n_carte_avversario": len(avv.mano),
+            "turno": env.turno,
             "azioni_legali": env.get_legal_actions(giocatore_idx),
             "partita_finita": env.partita_finita,
             # NUOVO: storico completo delle mosse di questa smazzata.
@@ -78,6 +81,7 @@ class ObservationBuilder:
             obs["scope_avversario"] / 10.0,
             obs["mano_corrente"] / 2.0,
             obs["carte_mazzo"] / 40.0,
+            obs["n_carte_avversario"] / 9.0,
             obs["turno"],
             obs["punteggi"][0] / 21.0,
             obs["punteggi"][1] / 21.0,

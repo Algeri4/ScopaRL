@@ -5,9 +5,12 @@ Script principale per allenare il bot RL della Scopa Bergamasca.
 """
 
 import argparse
+import os
+
 import torch
 
-from bot.bot_predatore import BotPredatore
+from bot.predatore import BotPredatore
+from botRL.observation_encoder import StandardEncoder
 from botRL.rete import ScopaNetwork
 from botRL.trainer import PPOTrainer
 
@@ -37,15 +40,22 @@ def main():
     print(f"Episodes: {args.episodes} | Device: {args.device} | LR: {args.lr}")
     print("=" * 60)
 
-    network = ScopaNetwork(input_dim=209, hidden_dim=512)
-    print(f"Rete: {sum(p.numel() for p in network.parameters()):,} parametri\n")
+    ENCODER = StandardEncoder()
+    PRETRAINED_PATH = "botRL/pretrain/checkpoints/pretrained_intelligente3.pt"
 
+    network = ScopaNetwork(input_dim=ENCODER.input_dim, hidden_dim=128)
     trainer = PPOTrainer(
-        network=network,
+        network,
         opponent=BotPredatore(),
-        lr=args.lr,
+        observation_encoder=ENCODER,
         device=args.device,
+        lr=args.lr,
     )
+
+    if os.path.exists(PRETRAINED_PATH):
+        trainer.load_pretrained_weights(PRETRAINED_PATH)
+    else:
+        print(f"⚠️  Nessun checkpoint pre-allenato trovato in {PRETRAINED_PATH}, parto da init casuale.")
 
     start_episode = 0
     if args.resume:

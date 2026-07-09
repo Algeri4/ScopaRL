@@ -98,7 +98,7 @@ class BotRL(BotAgent):
         """
         checkpoint = torch.load(checkpoint_path, map_location=device)
 
-        input_dim = checkpoint.get('network_input_dim', 209)
+        input_dim = checkpoint.get('network_input_dim', 210)
         hidden_dim = checkpoint.get('network_hidden_dim', 512)
         encoder_class_name = checkpoint.get('encoder_class', 'StandardEncoder')
 

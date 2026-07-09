@@ -8,7 +8,7 @@ from botRL.bot_variants import (
     create_bot_full_custom
 )
 from cli.partita import PartitaCLI
-from bot.bot_predatore import BotPredatore
+from bot.predatore import BotPredatore
 
 
 def train_and_evaluate(create_fn, name, episodes=5000):

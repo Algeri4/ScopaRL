@@ -13,7 +13,7 @@ import torch
 from cli.partita_cli import PartitaCLI
 from bot.bot_casuale import BotCasuale
 from bot.bot_greedy import BotGreedy
-from bot.bot_predatore import BotPredatore
+from bot.predatore import BotPredatore
 from botRL.bot_rl import BotRL
 from botRL.rete import ScopaNetwork
 

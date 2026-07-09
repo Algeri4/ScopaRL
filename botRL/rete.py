@@ -20,7 +20,7 @@ class ScopaNetwork(nn.Module):
       - Value head: hidden_dim//2 -> 1 (stima V(s))
     """
 
-    def __init__(self, input_dim: int = 209, hidden_dim: int = 512):
+    def __init__(self, input_dim: int = 209, hidden_dim: int = 256):
         super().__init__()
 
         # NB: salviamo esplicitamente le dimensioni come attributi. Servono

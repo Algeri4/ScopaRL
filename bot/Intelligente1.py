@@ -78,9 +78,6 @@ class BotIntelligente1(BotAgent):
                 # Più carte prese = meglio
                 punteggio += len(carte_totali) * 10
 
-                # Valore alto
-                for c in carte_totali:
-                    punteggio += c.valore
 
                 candidati.append((punteggio, azione))
 

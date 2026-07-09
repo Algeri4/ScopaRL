@@ -25,7 +25,7 @@ from scopa.ambiente import ScopaEnvironment
 from scopa.observation import ObservationBuilder
 from bot.casuale import BotCasuale
 from bot.greedy import BotGreedy
-from bot.bot_predatore import BotPredatore
+from bot.predatore import BotPredatore
 from .rete import ScopaNetwork, build_action_mask
 from .policy import ScopaPolicy
 from .buffer import RolloutBuffer

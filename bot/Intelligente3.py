@@ -1,20 +1,60 @@
 import random
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict, Any
 from scopa.carta import Carta
 from scopa.motore import MotoreScopa
-from scopa.probabilita import (
-    probabilita_almeno_una,
-    probabilita_cumulative,
-    calcola_parametri,
-    conta_carte_per_valore,
-)
 from .base import BotAgent
 
 
 class BotIntelligente3(BotAgent):
     """
-    Bot euristico avanzato con calcolo probabilistico del rischio.
-    Sfrutta scopa.probabilita per decisioni informate.
+    Bot euristico basato su uno SCORING esplicito per ogni azione possibile,
+    guardando due mosse avanti (la mia mossa, poi la possibile reazione
+    dell'avversario con ogni carta a lui sconosciuta).
+
+    Logica:
+    1) Se posso fare scopa, la faccio sempre (tra piu' scope, scelgo quella
+       che porta il guadagno maggiore, es. settebello).
+
+    2) Altrimenti, per ogni azione legale (presa o balla) calcolo il banco
+       che resterebbe dopo la mia mossa (B1). Per OGNI carta sconosciuta
+       (che l'avversario potrebbe avere in mano) controllo cosa potrebbe
+       fare su B1:
+         - se con quella carta l'avversario potrebbe fare SCOPA         -> -10000
+         - se potrebbe prendere il settebello senza lasciarmi la
+           possibilita' di rifarmi subito con una scopa                -> -8000
+         - se potrebbe prendere un 7 (non settebello) senza lasciarmi
+           la possibilita' di scopa                                    -> -5000
+         - se potrebbe prendere un 6 senza lasciarmi la possibilita'
+           di scopa                                                    -> -3000
+         - se potrebbe prendere un Oro (denari) senza lasciarmi la
+           possibilita' di scopa                                       -> -2000
+         - se potrebbe prendere qualunque altra carta senza lasciarmi
+           la possibilita' di scopa                                    -> -1000
+         - se con quella carta NON puo' prendere nulla                 -> 0
+
+       "Senza lasciarmi la possibilita' di fare scopa" viene verificato
+       DAVVERO: si calcola il banco B2 che resterebbe dopo la presa
+       ipotetica dell'avversario e si controlla se una qualunque carta
+       della mia mano (dopo aver giocato la carta di questo turno) mi
+       permetterebbe di fare scopa su B2. Se si', quella particolare
+       minaccia non genera penalita' (il rischio e' "coperto" dalla
+       controscopa). Questo e' lo sguardo "due mosse dopo".
+
+       Le penalita' di tutte le carte sconosciute si sommano: questo, oltre
+       a penalizzare le mosse davvero pericolose, pesa automaticamente
+       anche la PROBABILITA' (piu' carte sconosciute abilitano una minaccia,
+       piu' la mossa viene penalizzata) senza bisogno di un calcolo
+       probabilistico separato.
+
+    3) Al rischio calcolato sottraggo il guadagno immediato delle carte che
+       prendo in questa mossa (0 se e' una balla):
+         settebello = 6000, ogni 7 = 2500, ogni 6 = 500,
+         ogni Oro (denari) = 300, ogni altra carta = 100
+
+    4) Scelgo l'azione con punteggio (guadagno - rischio) piu' alto.
+       In caso di pareggio: prima minimizzo il numero di carte sconosciute
+       che darebbero scopa all'avversario (probabilita' di scopa), poi il
+       rischio totale, poi preferisco il guadagno maggiore.
     """
 
     def __init__(self, nome: str = "Intelligente3"):
@@ -24,182 +64,174 @@ class BotIntelligente3(BotAgent):
         return self._nome
 
     # ------------------------------------------------------------------
-    # RISCHIO BANCO (usa la libreria condivisa)
-    # ------------------------------------------------------------------
-
-    def _calcola_rischio_banco(self, banco: List[Carta], note: List[Carta],
-                                 n_mano_avversario: int, carte_mazzo: int) -> float:
-        """
-        Calcola il rischio di lasciare il banco così com'è.
-        Usa probabilita_almeno_una dalla libreria condivisa.
-        """
-        if not banco:
-            return 0.0
-
-        n_sconosciute = carte_mazzo + n_mano_avversario
-        carte_passate = conta_carte_per_valore(note)
-
-        rischio_totale = 0.0
-
-        for valore in range(1, 11):
-            rimanenti = 4 - carte_passate.get(valore, 0)
-            if rimanenti <= 0:
-                continue
-
-            prob_ha_carta = probabilita_almeno_una(rimanenti, n_sconosciute, n_mano_avversario)
-            if prob_ha_carta <= 0:
-                continue
-
-            carta_fittizia = Carta("denari", valore)
-            prese = MotoreScopa.trova_tutte_prese_legali(banco, carta_fittizia)
-
-            if prese:
-                max_prese = max(len(p) for p in prese)
-                rischio_scopa = 1.0 if max_prese == len(banco) else 0.0
-                danno = (max_prese / max(len(banco), 1)) * 0.5 + rischio_scopa * 2.0
-                rischio_totale += prob_ha_carta * danno
-
-        return min(rischio_totale, 1.0)
-
-    # ------------------------------------------------------------------
     # SCELTA MOSSA
     # ------------------------------------------------------------------
 
     def scegli_mossa(self, observation: dict) -> Tuple[Carta, Optional[List[Carta]]]:
         azioni = observation["azioni_legali"]
         banco = observation["banco"]
-
-        # Usa la libreria condivisa per parametri
-        note, n_mano_avversario, carte_mazzo = calcola_parametri(observation)
-        n_sconosciute = carte_mazzo + n_mano_avversario
-        carte_passate = conta_carte_per_valore(note)
+        mano = observation.get("mano", [])
+        sconosciute = observation.get("sconosciute", [])
 
         if not azioni:
             raise ValueError("Nessuna azione legale!")
 
-        # 1) SCOPA
+        # 1) SCOPA: se posso farla, la faccio sempre.
         scope = [a for a in azioni if a[1] is not None and len(a[1]) == len(banco)]
         if scope:
-            return scope[0]
+            migliore = max(scope, key=lambda a: self._guadagno(a[1] + [a[0]]))
+            return migliore
 
-        # 2) SETTEBELLO
-        settebello = [
-            a for a in azioni
-            if a[1] is not None and any(c.is_settebello() for c in a[1] + [a[0]])
-        ]
-        if settebello:
-            return settebello[0]
-
-        azioni_prese = [a for a in azioni if a[1] is not None]
-        azioni_balla = [a for a in azioni if a[1] is None]
-
-        # ==============================================================
-        # 3) PRESE: valuta rischio del banco residuo con probabilità
-        # ==============================================================
-        candidati_prese = []
-        for azione in azioni_prese:
+        # 2) Valutazione completa di tutte le azioni non-scopa
+        candidati: List[Dict[str, Any]] = []
+        for azione in azioni:
             carta, prese = azione
-            banco_dopo = [c for c in banco if c not in prese]
-            if not banco_dopo:
+            carte_totali = (prese + [carta]) if prese is not None else []
+            guadagno = self._guadagno(carte_totali)
+
+            # Banco che resta dopo la MIA mossa (B1)
+            if prese is not None:
+                banco_dopo = [c for c in banco if not any(self._carta_uguale(c, p) for p in prese)]
+            else:
+                banco_dopo = banco + [carta]
+
+            # La mia mano dopo aver giocato "carta" in questo turno
+            mano_dopo = [c for c in mano if not self._carta_uguale(c, carta)]
+
+            rischio_totale, n_carte_scopa = self._valuta_rischio(banco_dopo, sconosciute, mano_dopo)
+
+            punteggio = guadagno - rischio_totale
+
+            candidati.append({
+                "azione": azione,
+                "punteggio": punteggio,
+                "n_carte_scopa": n_carte_scopa,
+                "rischio_totale": rischio_totale,
+                "guadagno": guadagno,
+            })
+
+        # Ordina: punteggio decrescente, poi meno carte che darebbero scopa
+        # all'avversario (= minor probabilita' di scopa), poi meno rischio
+        # totale, poi guadagno maggiore. Se resta un pareggio perfetto,
+        # random.choice tra i pari-merito evita bias deterministici.
+        candidati.sort(key=lambda x: (
+            -x["punteggio"],
+            x["n_carte_scopa"],
+            x["rischio_totale"],
+            -x["guadagno"],
+        ))
+
+        miglior_punteggio = candidati[0]["punteggio"]
+        migliori = [c for c in candidati if (
+            c["punteggio"] == miglior_punteggio
+            and c["n_carte_scopa"] == candidati[0]["n_carte_scopa"]
+            and c["rischio_totale"] == candidati[0]["rischio_totale"]
+            and c["guadagno"] == candidati[0]["guadagno"]
+        )]
+
+        return random.choice(migliori)["azione"]
+
+    # ------------------------------------------------------------------
+    # VALUTAZIONE RISCHIO (2 mosse avanti)
+    # ------------------------------------------------------------------
+
+    def _valuta_rischio(self, banco_b1: List[Carta], sconosciute: List[Carta],
+                         mano_dopo: List[Carta]) -> Tuple[int, int]:
+        """
+        Ritorna (rischio_totale, numero_carte_che_darebbero_scopa) valutando,
+        per ogni carta sconosciuta, la peggior reazione possibile
+        dell'avversario su banco_b1.
+        """
+        if not banco_b1:
+            return 0, 0
+
+        rischio_totale = 0
+        n_carte_scopa = 0
+
+        for carta_sco in sconosciute:
+            penalita, e_scopa = self._penalita_per_carta_sconosciuta(banco_b1, carta_sco, mano_dopo)
+            rischio_totale += penalita
+            if e_scopa:
+                n_carte_scopa += 1
+
+        return rischio_totale, n_carte_scopa
+
+    def _penalita_per_carta_sconosciuta(self, banco_b1: List[Carta], carta_sco: Carta,
+                                         mano_dopo: List[Carta]) -> Tuple[int, bool]:
+        """
+        Calcola la peggior penalita' che l'avversario potrebbe infliggerci
+        giocando "carta_sco" su banco_b1, considerando TUTTE le prese
+        legali possibili con quella carta (si prende il caso peggiore).
+        """
+        prese_possibili = MotoreScopa.trova_tutte_prese_legali(banco_b1, carta_sco)
+        if not prese_possibili:
+            return 0, False
+
+        peggior_penalita = 0
+        scopa_possibile = False
+
+        for presa in prese_possibili:
+            # Scopa per l'avversario: penalita' massima, non mitigabile.
+            if len(presa) == len(banco_b1):
+                peggior_penalita = max(peggior_penalita, 10000)
+                scopa_possibile = True
                 continue
 
-            # Rischio scopa usando probabilità cumulative
-            rischio_scopa = 0.0
-            for valore in range(1, 11):
-                rim = 4 - carte_passate.get(valore, 0)
-                if rim <= 0:
-                    continue
-                prob = probabilita_almeno_una(rim, n_sconosciute, n_mano_avversario)
-                if prob > 0:
-                    carta_fittizia = Carta("denari", valore)
-                    prese_poss = MotoreScopa.trova_tutte_prese_legali(banco_dopo, carta_fittizia)
-                    if any(len(p) == len(banco_dopo) for p in prese_poss):
-                        rischio_scopa = max(rischio_scopa, prob)
+            # Banco che resterebbe dopo la presa ipotetica dell'avversario (B2)
+            banco_b2 = [c for c in banco_b1 if not any(self._carta_uguale(c, p) for p in presa)]
 
-            rischio_generale = self._calcola_rischio_banco(banco_dopo, note, n_mano_avversario, carte_mazzo)
+            # Se dopo quella presa io potrei rifarmi subito con una scopa,
+            # questa minaccia specifica non genera penalita'.
+            if self._posso_fare_scopa(banco_b2, mano_dopo):
+                continue
 
-            punteggio = 0
-            carte_totali = prese + [carta]
+            carte_prese_avversario = presa + [carta_sco]
 
-            for c in carte_totali:
-                if c.is_settebello():
-                    punteggio += 500
-                elif c.valore == 7:
-                    punteggio += 200
-                elif c.seme.lower() == "denari":
-                    punteggio += 80
-                elif c.valore == 10:
-                    punteggio += 30
+            if any(c.is_settebello() for c in carte_prese_avversario):
+                peggior_penalita = max(peggior_penalita, 8000)
+            elif any(c.valore == 7 for c in carte_prese_avversario):
+                peggior_penalita = max(peggior_penalita, 5000)
+            elif any(c.valore == 6 for c in carte_prese_avversario):
+                peggior_penalita = max(peggior_penalita, 3000)
+            elif any(c.seme.lower() == "denari" for c in carte_prese_avversario):
+                peggior_penalita = max(peggior_penalita, 2000)
+            else:
+                peggior_penalita = max(peggior_penalita, 1000)
 
-            punteggio += len(carte_totali) * 10
-            punteggio += carta.valore * 2
+        return peggior_penalita, scopa_possibile
 
-            # Penalità basata su probabilità reale
-            if rischio_scopa > 0.5:
-                punteggio -= 300
-            elif rischio_generale > 0.7:
-                punteggio -= 150
-            elif rischio_generale < 0.2:
-                punteggio += 100
+    def _posso_fare_scopa(self, banco: List[Carta], mano: List[Carta]) -> bool:
+        """True se con una qualunque carta della mia mano posso svuotare 'banco'."""
+        if not banco:
+            return False
+        for c in mano:
+            for presa in MotoreScopa.trova_tutte_prese_legali(banco, c):
+                if len(presa) == len(banco):
+                    return True
+        return False
 
-            candidati_prese.append((punteggio, azione, rischio_scopa))
+    # ------------------------------------------------------------------
+    # GUADAGNO IMMEDIATO
+    # ------------------------------------------------------------------
 
-        if candidati_prese:
-            sicure = [c for c in candidati_prese if c[2] < 0.3]
-            if sicure:
-                sicure.sort(key=lambda x: x[0], reverse=True)
-                return sicure[0][1]
-            candidati_prese.sort(key=lambda x: x[0], reverse=True)
-            return candidati_prese[0][1]
-
-        # ==============================================================
-        # 4) BALLA: minimizza rischio probabilistico
-        # ==============================================================
-        candidati_balla = []
-        for azione in azioni_balla:
-            carta = azione[0]
-            banco_dopo = banco + [carta]
-
-            rischio_scopa = 0.0
-            for valore in range(1, 11):
-                rim = 4 - carte_passate.get(valore, 0)
-                if rim <= 0:
-                    continue
-                prob = probabilita_almeno_una(rim, n_sconosciute, n_mano_avversario)
-                if prob > 0:
-                    carta_fittizia = Carta("denari", valore)
-                    prese_poss = MotoreScopa.trova_tutte_prese_legali(banco_dopo, carta_fittizia)
-                    if any(len(p) == len(banco_dopo) for p in prese_poss):
-                        rischio_scopa = max(rischio_scopa, prob)
-
-            rischio_generale = self._calcola_rischio_banco(banco_dopo, note, n_mano_avversario, carte_mazzo)
-
-            punteggio = carta.valore * 2
-
-            if carta.seme.lower() == "denari":
-                punteggio -= 50
-            if carta.valore == 7:
-                punteggio -= 80
-
-            if rischio_scopa > 0:
-                punteggio -= rischio_scopa * 500
-            if rischio_generale > 0.5:
-                punteggio -= rischio_generale * 200
-
-            # Bonus banco morto (somma = valore finito)
-            somma_banco = sum(c.valore for c in banco_dopo)
-            rim_somma = 4 - carte_passate.get(somma_banco, 0)
-            if rim_somma <= 0 and len(banco_dopo) > 1:
+    def _guadagno(self, carte: List[Carta]) -> int:
+        punteggio = 0
+        for c in carte:
+            if c.is_settebello():
+                punteggio += 6000
+            elif c.valore == 7:
+                punteggio += 2500
+            elif c.valore == 6:
+                punteggio += 500
+            elif c.seme.lower() == "denari":
                 punteggio += 300
+            else:
+                punteggio += 100
+        return punteggio
 
-            candidati_balla.append((punteggio, azione, rischio_scopa))
+    # ------------------------------------------------------------------
+    # HELPER
+    # ------------------------------------------------------------------
 
-        if candidati_balla:
-            senza_scopa = [c for c in candidati_balla if c[2] == 0]
-            if senza_scopa:
-                senza_scopa.sort(key=lambda x: x[0], reverse=True)
-                return senza_scopa[0][1]
-            candidati_balla.sort(key=lambda x: (x[2], -x[0]))
-            return candidati_balla[0][1]
-
-        return random.choice(azioni)
+    def _carta_uguale(self, c1: Carta, c2: Carta) -> bool:
+        return c1.seme == c2.seme and c1.valore == c2.valore

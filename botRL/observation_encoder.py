@@ -32,13 +32,13 @@ def _features_scalari(observation: dict) -> List[float]:
         observation["scope_avversario"] / 10.0,
         observation["mano_corrente"] / 2.0,
         observation["carte_mazzo"] / 40.0,
+        observation["n_carte_avversario"] / 9.0,
         observation["turno"],
         observation["punteggi"][0] / 21.0,
         observation["punteggi"][1] / 21.0,
         len(observation["azioni_legali"]) / 50.0,
         1.0 if observation["partita_finita"] else 0.0,
     ]
-
 
 class ObservationEncoder(ABC):
     """Interfaccia per convertire observation dict in vettore per la NN."""
@@ -60,7 +60,7 @@ class StandardEncoder(ObservationEncoder):
 
     @property
     def input_dim(self) -> int:
-        return 209  # 40*5 one-hot + 9 scalari
+        return 210  # 40*5 one-hot + 9 scalari
 
     def encode(self, observation: dict) -> List[float]:
         v = []
@@ -81,7 +81,7 @@ class ProbabilisticEncoder(ObservationEncoder):
 
     @property
     def input_dim(self) -> int:
-        return 40 * 4 + 40 + 9  # mano+banco+prese_mie+prese_avv one-hot (40*4) + prob (40) + 9 scalari
+        return 40 * 4 + 40 + 10  # mano+banco+prese_mie+prese_avv one-hot (40*4) + prob (40) + 9 scalari
 
     def encode(self, observation: dict) -> List[float]:
         from scopa.probabilita import calcola_tutte_proabilita
@@ -115,7 +115,7 @@ class HistoryEncoder(ObservationEncoder):
 
     @property
     def input_dim(self) -> int:
-        return 209 + 40 * self.history_length
+        return 210 + 40 * self.history_length
 
     def encode(self, observation: dict) -> List[float]:
         v = []
@@ -150,7 +150,7 @@ class PreseEncoder(ObservationEncoder):
 
     @property
     def input_dim(self) -> int:
-        return 40 * 4 + 9  # mano, banco, prese_mie, prese_avversario + scalari
+        return 40 * 4 + 10  # mano, banco, prese_mie, prese_avversario + scalari
 
     def encode(self, observation: dict) -> List[float]:
         v = []
